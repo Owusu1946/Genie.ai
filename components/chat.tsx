@@ -13,6 +13,7 @@ import { Messages } from './messages';
 import { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
+import { WebSearchStatus } from './web-search-status';
 
 export function Chat({
   id,
@@ -71,6 +72,8 @@ export function Chat({
           selectedVisibilityType={selectedVisibilityType}
           isReadonly={isReadonly}
         />
+
+        <WebSearchStatus />
 
         <Messages
           chatId={id}

@@ -16,13 +16,15 @@ import {
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
 
-import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
+import { ArrowUpIcon, GlobeIcon, PaperclipIcon, StopIcon } from './icons';
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { SuggestedActions } from './suggested-actions';
 import equal from 'fast-deep-equal';
 import { UseChatHelpers } from '@ai-sdk/react';
+import { clientLog } from '@/lib/utils/client-logging';
+import { runWebSearchDiagnostics } from '@/lib/utils/web-search-diagnostics';
 
 function PureMultimodalInput({
   chatId,
@@ -106,6 +108,12 @@ function PureMultimodalInput({
   const submitForm = useCallback(() => {
     window.history.replaceState({}, '', `/chat/${chatId}`);
 
+    // Check if this is a web search request and log it
+    if (input.trim().startsWith('/web ')) {
+      const query = input.trim().substring(5);
+      clientLog.webSearch.sending(query);
+    }
+
     handleSubmit(undefined, {
       experimental_attachments: attachments,
     });
@@ -124,6 +132,7 @@ function PureMultimodalInput({
     setLocalStorageInput,
     width,
     chatId,
+    input,
   ]);
 
   const uploadFile = async (file: File) => {
@@ -248,7 +257,8 @@ function PureMultimodalInput({
         }}
       />
 
-      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
+      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start gap-1">
+        <WebSearchButton setInput={setInput} status={status} />
         <AttachmentsButton fileInputRef={fileInputRef} status={status} />
       </div>
 
@@ -357,3 +367,84 @@ const SendButton = memo(PureSendButton, (prevProps, nextProps) => {
   if (prevProps.input !== nextProps.input) return false;
   return true;
 });
+
+function PureWebSearchButton({
+  setInput,
+  status,
+}: {
+  setInput: UseChatHelpers['setInput'];
+  status: UseChatHelpers['status'];
+}) {
+  const handleWebSearch = useCallback(() => {
+    setInput((currentInput) => {
+      // Add web search prefix only if it doesn't already exist
+      if (currentInput.trim().startsWith("/web ")) {
+        clientLog.webSearch.init(currentInput.trim().substring(5));
+        return currentInput;
+      }
+      
+      // Log detailed info to browser console
+      clientLog.webSearch.init(currentInput);
+      
+      // Return the web-prefixed input
+      return `/web ${currentInput}`;
+    });
+    
+    toast.success("Web search enabled for this query", {
+      description: "Genie.ai will search Google for current information.",
+      duration: 3000,
+    });
+  }, [setInput]);
+  
+  // Add a diagnostics mode when Alt+Click is used
+  const runDiagnostics = useCallback(async (event: React.MouseEvent) => {
+    event.preventDefault();
+    
+    toast.info("Running web search diagnostics...", {
+      description: "Check browser console for detailed results",
+      duration: 5000,
+    });
+    
+    console.log('%c🌐 Web Search Diagnostics', 'background: #4285f4; color: white; padding: 2px 4px; border-radius: 3px;', 'Starting diagnostics...');
+    
+    try {
+      await runWebSearchDiagnostics();
+      
+      toast.success("Web search diagnostics complete", {
+        description: "Results available in browser console (F12)",
+        duration: 5000,
+      });
+    } catch (error) {
+      console.error('Diagnostics error:', error);
+      toast.error("Diagnostics failed", {
+        description: "Check browser console for error details",
+        duration: 5000,
+      });
+    }
+  }, []);
+
+  return (
+    <Button
+      data-testid="web-search-button"
+      className="rounded-md rounded-bl-lg p-[7px] h-fit dark:border-zinc-700 hover:dark:bg-zinc-900 hover:bg-zinc-200"
+      onClick={(event) => {
+        // If Alt key is pressed, run diagnostics instead
+        if (event.altKey) {
+          runDiagnostics(event);
+          return;
+        }
+        
+        // Otherwise proceed with normal web search
+        event.preventDefault();
+        handleWebSearch();
+      }}
+      disabled={status !== 'ready'}
+      variant="ghost"
+      title="Search the web for current information (Alt+Click for diagnostics)"
+    >
+      <GlobeIcon size={14} />
+    </Button>
+  );
+}
+
+const WebSearchButton = memo(PureWebSearchButton);

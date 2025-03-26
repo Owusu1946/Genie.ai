@@ -23,6 +23,7 @@ import { createDocument } from '@/lib/ai/tools/create-document';
 import { updateDocument } from '@/lib/ai/tools/update-document';
 import { requestSuggestions } from '@/lib/ai/tools/request-suggestions';
 import { getWeather } from '@/lib/ai/tools/get-weather';
+import { webSearch, webSearchInitialReasoning, webSearchResultsReasoning } from '@/lib/ai/tools/web-search';
 import { isProductionEnvironment } from '@/lib/constants';
 import { myProvider } from '@/lib/ai/providers';
 
@@ -32,13 +33,15 @@ export async function POST(request: Request) {
   try {
     const {
       id,
-      messages,
+      messages: initialMessages,
       selectedChatModel,
     }: {
       id: string;
       messages: Array<UIMessage>;
       selectedChatModel: string;
     } = await request.json();
+
+    let messages = [...initialMessages];
 
     const session = await auth();
 
@@ -50,6 +53,44 @@ export async function POST(request: Request) {
 
     if (!userMessage) {
       return new Response('No user message found', { status: 400 });
+    }
+
+    // Check if this is a web search request
+    let isWebSearch = false;
+    let webSearchQuery = '';
+    
+    // Check if the first part is a text part and starts with /web
+    const firstPart = userMessage.parts[0];
+    if (firstPart && 
+        'text' in firstPart && 
+        typeof firstPart.text === 'string' && 
+        firstPart.text.startsWith('/web ')) {
+      isWebSearch = true;
+      // Remove the /web prefix for processing
+      webSearchQuery = firstPart.text.substring(5).trim();
+      
+      // Create updated message parts with the modified text
+      const updatedParts = [
+        {
+          ...firstPart,
+          text: webSearchQuery
+        },
+        ...(userMessage.parts.slice(1) || [])
+      ];
+      
+      // Create an updated user message
+      const updatedUserMessage = {
+        ...userMessage,
+        parts: updatedParts
+      };
+      
+      // Update messages array with the updated user message
+      messages = messages.map(msg => 
+        msg.id === userMessage.id ? updatedUserMessage : msg
+      );
+      
+      // Also update the original userMessage for later use
+      userMessage.parts = updatedParts;
     }
 
     const chat = await getChatById({ id });
@@ -79,11 +120,27 @@ export async function POST(request: Request) {
       ],
     });
 
+    // Prepare the system prompt with additional context for web search
+    const enhancedSystemPrompt = isWebSearch
+      ? systemPrompt({ selectedChatModel }) + 
+        '\n\nThe user has requested web search information. Use the webSearch tool to find current information on the web. IMPORTANT INSTRUCTIONS:\n\n' +
+        '1. ALWAYS begin your response by showing what you searched for: "I searched the web for: [query]"\n' +
+        '2. If the search returns an error or configuration issue, you MUST display the exact error message to the user. Do not hide errors.\n' +
+        '3. Display all search results in a structured format, including titles, snippets, and URLs.\n' +
+        '4. Format each result like this:\n' +
+        '   ## [Title]\n' +
+        '   [Snippet]\n' +
+        '   Source: [URL]\n\n' +
+        '5. After showing all results, provide a summary of the information found.\n' +
+        '6. Always cite your sources by including the URLs from the search results.\n' +
+        '7. Do not make up information that is not in the search results.'
+      : systemPrompt({ selectedChatModel });
+
     return createDataStreamResponse({
       execute: (dataStream) => {
         const result = streamText({
           model: myProvider.languageModel(selectedChatModel),
-          system: systemPrompt({ selectedChatModel }),
+          system: enhancedSystemPrompt,
           messages,
           maxSteps: 5,
           experimental_activeTools:
@@ -94,6 +151,7 @@ export async function POST(request: Request) {
                   'createDocument',
                   'updateDocument',
                   'requestSuggestions',
+                  'webSearch',
                 ],
           experimental_transform: smoothStream({ chunking: 'word' }),
           experimental_generateMessageId: generateUUID,
@@ -105,6 +163,20 @@ export async function POST(request: Request) {
               session,
               dataStream,
             }),
+            webSearch: {
+              description: webSearch.description,
+              parameters: webSearch.parameters,
+              handler: async (params: { query: string }) => {
+                console.log(`🔍 Web Search Status: Searching for "${params.query}"...`);
+                
+                // Call the actual web search function
+                const results = await webSearch.handler(params);
+                
+                console.log(`✅ Web Search Status: Found ${results.length} results for "${params.query}"`);
+                
+                return results;
+              }
+            }
           },
           onFinish: async ({ response }) => {
             if (session.user?.id) {
