@@ -2,7 +2,7 @@
 
 import type { Attachment, UIMessage } from 'ai';
 import { useChat } from '@ai-sdk/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -14,6 +14,7 @@ import { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { WebSearchStatus } from './web-search-status';
+import { useWindowSize } from 'usehooks-ts';
 
 export function Chat({
   id,
@@ -29,6 +30,8 @@ export function Chat({
   isReadonly: boolean;
 }) {
   const { mutate } = useSWRConfig();
+  const { width } = useWindowSize();
+  const isMobile = width < 768;
 
   const {
     messages,
@@ -51,7 +54,7 @@ export function Chat({
       mutate('/api/history');
     },
     onError: () => {
-      toast.error('An error occured, please try again!');
+      toast.error('An error occurred, please try again!');
     },
   });
 
@@ -62,6 +65,30 @@ export function Chat({
 
   const [attachments, setAttachments] = useState<Array<Attachment>>([]);
   const isArtifactVisible = useArtifactSelector((state) => state.isVisible);
+
+  // Adjust viewport on mobile when keyboard appears
+  useEffect(() => {
+    if (isMobile) {
+      const metaViewport = document.querySelector('meta[name=viewport]');
+      if (!metaViewport) {
+        const meta = document.createElement('meta');
+        meta.name = 'viewport';
+        meta.content = 'width=device-width, initial-scale=1, maximum-scale=1';
+        document.head.appendChild(meta);
+      } else {
+        metaViewport.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1');
+      }
+    }
+    
+    return () => {
+      if (isMobile) {
+        const metaViewport = document.querySelector('meta[name=viewport]');
+        if (metaViewport) {
+          metaViewport.setAttribute('content', 'width=device-width, initial-scale=1');
+        }
+      }
+    };
+  }, [isMobile]);
 
   return (
     <>
@@ -86,7 +113,7 @@ export function Chat({
           isArtifactVisible={isArtifactVisible}
         />
 
-        <form className="flex mx-auto px-4 bg-background pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
+        <form className="flex mx-auto px-2 sm:px-4 bg-background pb-2 sm:pb-4 md:pb-6 gap-2 w-full md:max-w-3xl">
           {!isReadonly && (
             <MultimodalInput
               chatId={id}
