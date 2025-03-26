@@ -1135,7 +1135,7 @@ export const FullscreenIcon = ({ size = 16 }: { size?: number }) => (
   </svg>
 );
 
-export const DownloadIcon = ({ size = 16 }: { size?: number }) => (
+export const DownloadIcon = ({ size = 16, className }: { size?: number; className?: string }) => (
   <svg
     height={size}
     strokeLinejoin="round"
