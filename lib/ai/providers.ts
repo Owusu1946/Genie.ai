@@ -24,7 +24,7 @@ export const myProvider = isTestEnvironment
     })
   : customProvider({
       languageModels: {
-        'chat-model': xai('grok-2-1212'),
+        'chat-model': xai('grok-2-vision-1212'),
         'chat-model-reasoning': wrapLanguageModel({
           model: groq('deepseek-r1-distill-llama-70b'),
           middleware: extractReasoningMiddleware({ tagName: 'think' }),
@@ -33,6 +33,6 @@ export const myProvider = isTestEnvironment
         'artifact-model': xai('grok-2-1212'),
       },
       imageModels: {
-        'small-model': xai.image('grok-2-image'),
+        'small-model': xai.image('grok-2-image-1212'),
       },
     });
